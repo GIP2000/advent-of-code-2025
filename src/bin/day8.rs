@@ -1,4 +1,8 @@
-use std::collections::HashMap;
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use anyhow::Result;
 
@@ -29,26 +33,41 @@ fn square_distance(a: Position, b: Position) -> u64 {
 fn part_1(input: &str, amount: usize) -> u64 {
     let lst = parse(input);
 
+    //@greg: this is stupid and dumb
+    let sets_done = Rc::new(RefCell::new(HashSet::new()));
+
     let mut flat_dists_sorted: Vec<_> = lst
         .iter()
         .enumerate()
         .flat_map(|(io, outer)| {
+            let sets_done = sets_done.clone();
             lst.iter()
                 .enumerate()
                 .filter(move |(ii, _)| *ii != io)
-                .map(move |(ii, inner)| (io, ii, square_distance(inner.clone(), outer.clone())))
+                .flat_map(move |(ii, inner)| {
+                    if sets_done.borrow().contains(&(ii, io))
+                        || sets_done.borrow().contains(&(io, ii))
+                    {
+                        return None;
+                    }
+
+                    sets_done.borrow_mut().insert((ii, io));
+
+                    Some((
+                        (io, outer),
+                        (ii, inner),
+                        square_distance(inner.clone(), outer.clone()),
+                    ))
+                })
         })
         .collect();
 
     flat_dists_sorted.sort_by_key(|(_, _, dist)| *dist);
-    flat_dists_sorted.reverse();
-
-    println!("sorted: {:?}", flat_dists_sorted);
 
     let mut circuit_count = 0;
     let mut circuits: HashMap<usize, u64> = HashMap::new();
 
-    for (box_a, box_b, _) in flat_dists_sorted.into_iter().take(amount) {
+    for ((box_a, _), (box_b, _), _) in flat_dists_sorted.into_iter().take(amount) {
         let circuit_a = circuits.get(&box_a).map(|x| *x);
         let circuit_b = circuits.get(&box_b).map(|x| *x);
 
@@ -68,7 +87,6 @@ fn part_1(input: &str, amount: usize) -> u64 {
                 }
             }
         };
-        println!("circuits {:?}: ", circuits);
     }
 
     let mut circs: HashMap<u64, u64> = HashMap::new();
@@ -82,18 +100,95 @@ fn part_1(input: &str, amount: usize) -> u64 {
 
     let mut circs: Vec<_> = circs.into_values().collect();
     circs.sort();
-    circs.into_iter().take(3).product()
+    circs.into_iter().rev().take(3).product()
 }
+
 fn part_2(input: &str) -> u64 {
-    0
+    let lst = parse(input);
+
+    let junc_count = lst.len();
+
+    //@greg: this is stupid and dumb
+    let sets_done = Rc::new(RefCell::new(HashSet::new()));
+
+    let mut flat_dists_sorted: Vec<_> = lst
+        .iter()
+        .enumerate()
+        .flat_map(|(io, outer)| {
+            let sets_done = sets_done.clone();
+            lst.iter()
+                .enumerate()
+                .filter(move |(ii, _)| *ii != io)
+                .flat_map(move |(ii, inner)| {
+                    if sets_done.borrow().contains(&(ii, io))
+                        || sets_done.borrow().contains(&(io, ii))
+                    {
+                        return None;
+                    }
+
+                    sets_done.borrow_mut().insert((ii, io));
+
+                    Some((
+                        (io, outer),
+                        (ii, inner),
+                        square_distance(inner.clone(), outer.clone()),
+                    ))
+                })
+        })
+        .collect();
+
+    flat_dists_sorted.sort_by_key(|(_, _, dist)| *dist);
+
+    let mut circuit_count = 0;
+    let mut circuits: HashMap<usize, u64> = HashMap::new();
+
+    let mut answer = None;
+    for ((box_a, pos_a), (box_b, pos_b), _) in flat_dists_sorted.into_iter() {
+        let circuit_a = circuits.get(&box_a).map(|x| *x);
+        let circuit_b = circuits.get(&box_b).map(|x| *x);
+
+        match (circuit_a, circuit_b) {
+            (None, None) => {
+                circuits.insert(box_a, circuit_count);
+                circuits.insert(box_b, circuit_count);
+                circuit_count += 1;
+            }
+            (Some(x), None) | (None, Some(x)) => {
+                circuits.insert(box_a, x);
+                circuits.insert(box_b, x);
+            }
+            (Some(a), Some(b)) => {
+                for (_, id) in circuits.iter_mut().filter(|(_, id)| **id == b) {
+                    *id = a;
+                }
+            }
+        };
+
+        if circuits.len() != junc_count {
+            continue;
+        }
+
+        let mut citer = circuits.iter();
+
+        let (_, id) = citer.next().unwrap();
+
+        if !citer.any(|(_, i_id)| id != i_id) {
+            answer = Some((pos_a.clone(), pos_b.clone()));
+            break;
+        }
+    }
+
+    let answer = answer.unwrap();
+
+    answer.0 .0 * answer.1 .0
 }
 
 fn main() -> Result<()> {
     let result1 = part_1(PUZZLE_INPUT, 1000);
     println!("PART 1: {result1}");
 
-    // let result2 = part_2(PUZZLE_INPUT);
-    // println!("PART 2: {result2}");
+    let result2 = part_2(PUZZLE_INPUT);
+    println!("PART 2: {result2}");
 
     Ok(())
 }
@@ -126,12 +221,12 @@ mod test {
     #[test]
     fn test_part_1() {
         let result = part_1(INPUT, 10);
-        assert_eq!(result, 21);
+        assert_eq!(result, 40);
     }
 
-    // #[test]
-    // fn test_part_2() {
-    //     let result = part_2(INPUT);
-    //     assert_eq!(result, 40);
-    // }
+    #[test]
+    fn test_part_2() {
+        let result = part_2(INPUT);
+        assert_eq!(result, 25272);
+    }
 }
